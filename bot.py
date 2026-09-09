@@ -3,30 +3,24 @@ import time
 import json
 import threading
 from datetime import datetime, timezone
-
-
 from web3 import Web3
 
-
-try:  # web3 v6
+try:
     from web3.middleware import geth_poa_middleware as POA_MIDDLEWARE
-except ImportError:  # web3 v7+
+except ImportError:
     from web3.middleware import ExtraDataToPOAMiddleware as POA_MIDDLEWARE
 
-
 # ==================== CONFIG ====================
-RPC_URL     = os.getenv("BASE_RPC", "https://mainnet.base.org")
+RPC_URL = os.getenv("BASE_RPC", "https://mainnet.base.org")
 PRIVATE_KEY = os.getenv("PRIV_KEY", "").strip()
-TOKEN       = Web3.to_checksum_address("0xB095274743941e953c746F9C228DA9c18Bb6ec29")
-WETH        = Web3.to_checksum_address("0x4200000000000000000000000000000000000006")
-CHAIN_ID    = 8453
+TOKEN = Web3.to_checksum_address("0xB095274743941e953c746F9C228DA9c18Bb6ec29")
+WETH = Web3.to_checksum_address("0x4200000000000000000000000000000000000006")
+CHAIN_ID = 8453
 
-
-V2_ROUTER  = Web3.to_checksum_address("0x4752ba5dbc23f44d87826276bf6fd6b1c372ad24")
-V3_ROUTER  = Web3.to_checksum_address("0x2626664c2603336E57B271c5C0b26F421741e481")
+V2_ROUTER = Web3.to_checksum_address("0x4752ba5dbc23f44d87826276bf6fd6b1c372ad24")
+V3_ROUTER = Web3.to_checksum_address("0x2626664c2603336E57B271c5C0b26F421741e481")
 V2_FACTORY = Web3.to_checksum_address("0x8909Dc15e40173Ff4699343b6eB8132c65e18eC6")
 V3_FACTORY = Web3.to_checksum_address("0x33128a8fC17869897dcE68Ed026d694621f6FDfD")
-
 
 V2_PAIR = os.getenv("V2_PAIR_ADDRESS", "").strip()
 V3_POOL = os.getenv("V3_POOL_ADDRESS", "").strip()
@@ -34,21 +28,18 @@ AUTO_V2 = os.getenv("AUTO_DETECT_V2", "true").lower() == "true"
 AUTO_V3 = os.getenv("AUTO_DETECT_V3", "true").lower() == "true"
 V3_POOL_FEE = int(os.getenv("V3_POOL_FEE", "500"))
 
-
-# ==================== BUY SETTINGS (HIGH TAX OPTIMIZED) ====================
-BUY_AMOUNT_ETH    = float(os.getenv("BUY_AMOUNT_ETH", "0.002"))
-SLIPPAGE_PERCENT  = float(os.getenv("SLIPPAGE_PERCENT", "35"))  # 35% for 25% tax
-MAX_FEE_GWEI      = float(os.getenv("MAX_FEE_GWEI", "200"))     # Higher gas
+# ==================== BUY SETTINGS ====================
+BUY_AMOUNT_ETH = float(os.getenv("BUY_AMOUNT_ETH", "0.0014"))
+SLIPPAGE_PERCENT = float(os.getenv("SLIPPAGE_PERCENT", "40"))
+MAX_FEE_GWEI = float(os.getenv("MAX_FEE_GWEI", "220"))
 MAX_PRIORITY_GWEI = float(os.getenv("MAX_PRIORITY_GWEI", "20"))
-LIQUIDITY_THRESHOLD_PERCENT = float(os.getenv("LIQUIDITY_THRESHOLD", "5"))
-POLL_SECONDS      = 2
-ONE_TIME_BUY      = os.getenv("ONE_TIME_BUY", "true").lower() == "true"
-MAX_BUY_ATTEMPTS  = 5
-
+LIQUIDITY_THRESHOLD_PERCENT = float(os.getenv("LIQUIDITY_THRESHOLD", "3"))
+POLL_SECONDS = 1
+ONE_TIME_BUY = os.getenv("ONE_TIME_BUY", "true").lower() == "true"
+MAX_BUY_ATTEMPTS = 10
 
 STATUS_FILE = os.getenv("STATUS_FILE", "bot_status.json")
-BUYS_FILE   = os.getenv("BUYS_FILE", "buys.json")
-
+BUYS_FILE = os.getenv("BUYS_FILE", "buys.json")
 
 # ==================== ABIs ====================
 V2_PAIR_ABI = [
@@ -107,17 +98,14 @@ V3_ROUTER_ABI = [
 FEE_TIERS = [100, 500, 3000, 10000]
 ZERO_ADDR = "0x" + "0" * 40
 
-
 def _topic(text):
     h = Web3.keccak(text=text)
     h = h.hex() if not isinstance(h, str) else h
     return h if h.startswith("0x") else "0x" + h
 
-
-PAIR_SIG    = _topic("PairCreated(address,address,address,uint256)")
-POOL_SIG    = _topic("PoolCreated(address,address,uint24,int24,address)")
+PAIR_SIG = _topic("PairCreated(address,address,address,uint256)")
+POOL_SIG = _topic("PoolCreated(address,address,uint24,int24,address)")
 TOKEN_TOPIC = "0x" + "0" * 24 + TOKEN[2:].lower()
-
 
 # ==================== GLOBALS ====================
 w3 = None
@@ -129,10 +117,8 @@ status = {"running": False, "mode": "", "found_v2_pair": "", "found_v3_pool": ""
           "last_buy": None, "buys": [], "error": None, "wallet": "", "eth_balance": 0.0}
 status_lock = threading.Lock()
 
-
 def log(msg):
     print(f"[{datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S')}] {msg}", flush=True)
-
 
 def save_status():
     with status_lock:
@@ -142,11 +128,9 @@ def save_status():
         except OSError as e:
             log(f"⚠️ status file error: {e}")
 
-
 def set_error(e):
     status["error"] = str(e)[:300]
     save_status()
-
 
 def add_buy(tx_hash, version):
     entry = {"tx_hash": tx_hash, "version": version, "amount_eth": BUY_AMOUNT_ETH,
@@ -170,10 +154,8 @@ def add_buy(tx_hash, version):
     except OSError as e:
         log(f"⚠️ buys file error: {e}")
 
-
 def _raw_tx(signed):
     return getattr(signed, "raw_transaction", None) or signed.rawTransaction
-
 
 def _gas_fields():
     return {
@@ -183,41 +165,43 @@ def _gas_fields():
         "maxPriorityFeePerGas": w3.to_wei(MAX_PRIORITY_GWEI, "gwei"),
     }
 
-
 def _send(tx, version):
-    signed = w3.eth.account.sign_transaction(tx, PRIVATE_KEY)
-    tx_hash = w3.eth.send_raw_transaction(_raw_tx(signed)).hex()
-    if not tx_hash.startswith("0x"):
-        tx_hash = "0x" + tx_hash
-    log(f"🚀 TX SENT: {tx_hash}")
-    receipt = w3.eth.wait_for_transaction_receipt(tx_hash, timeout=180)
-    if receipt["status"] == 1:
-        log(f"✅✅✅ {version} BUY SUCCESS: https://basescan.org/tx/{tx_hash}")
-        return tx_hash
-    log(f"❌ {version} buy REVERTED: {tx_hash}")
-    return None
+    try:
+        signed = w3.eth.account.sign_transaction(tx, PRIVATE_KEY)
+        tx_hash = w3.eth.send_raw_transaction(_raw_tx(signed)).hex()
+        if not tx_hash.startswith("0x"):
+            tx_hash = "0x" + tx_hash
+        log(f"🚀🚀🚀 TX SENT: {tx_hash}")
+        
+        receipt = w3.eth.wait_for_transaction_receipt(tx_hash, timeout=300)
+        if receipt["status"] == 1:
+            log(f"✅✅✅✅✅ {version} BUY SUCCESS: https://basescan.org/tx/{tx_hash}")
+            return tx_hash
+        else:
+            log(f"❌ {version} REVERTED: {tx_hash}")
+            return None
+    except Exception as e:
+        log(f"❌ _send error: {e}")
+        return None
 
-
-# ==================== BUY FUNCTIONS (TAX OPTIMIZED) ====================
+# ==================== BUY FUNCTIONS ====================
 def buy_v2(amount_in_wei):
     path = [WETH, TOKEN]
     try:
         amounts = v2_router.functions.getAmountsOut(amount_in_wei, path).call()
         expected_out = amounts[-1]
-        
-        # 35% slippage for 25% tax + buffer
         amount_out_min = int(expected_out * (100 - SLIPPAGE_PERCENT) / 100)
         
-        log(f"💰 V2 quote: {expected_out / 10**18:.2f} LAPTOP (before 25% tax)")
-        log(f"🎯 Min output: {amount_out_min / 10**18:.2f} (slippage {SLIPPAGE_PERCENT}%)")
-        log(f"📉 After 25% tax: ~{expected_out * 0.75 / 10**18:.2f} tokens")
+        log(f"💰💰💰 V2: {expected_out / 10**18:.2f} tokens expected")
+        log(f"🎯 Min: {amount_out_min / 10**18:.2f} (slippage {SLIPPAGE_PERCENT}%)")
+        log(f"⚠️ 25% tax - you get ~{expected_out * 0.75 / 10**18:.2f}")
         
         tx = v2_router.functions.swapExactETHForTokensSupportingFeeOnTransferTokens(
-            amount_out_min, path, acct.address, int(time.time()) + 180
+            amount_out_min, path, acct.address, int(time.time()) + 300
         ).build_transaction({
-            "from": acct.address, 
-            "value": amount_in_wei, 
-            "gas": 500000,  # Higher gas for tax tokens
+            "from": acct.address,
+            "value": amount_in_wei,
+            "gas": 600000,
             **_gas_fields()
         })
         return _send(tx, "V2")
@@ -225,19 +209,18 @@ def buy_v2(amount_in_wei):
         log(f"❌ V2 buy error: {e}")
         return None
 
-
 def buy_v3(amount_in_wei, fee=None):
     fee = V3_POOL_FEE if fee is None else fee
     try:
-        log(f"💰 V3 buy: {fee} fee tier, {BUY_AMOUNT_ETH} ETH")
-        log(f"⚠️ 25% tax applies - expect 75% of tokens")
+        log(f"💰💰💰 V3 BUY: {fee} fee, {BUY_AMOUNT_ETH} ETH")
+        log(f"⚠️ 25% tax - expect 75% of tokens")
         
         params = (WETH, TOKEN, int(fee), acct.address, amount_in_wei, 0, 0)
         
         tx = v3_router.functions.exactInputSingle(params).build_transaction({
-            "from": acct.address, 
-            "value": amount_in_wei, 
-            "gas": 600000,  # Higher gas
+            "from": acct.address,
+            "value": amount_in_wei,
+            "gas": 700000,
             **_gas_fields()
         })
         return _send(tx, "V3")
@@ -245,35 +228,32 @@ def buy_v3(amount_in_wei, fee=None):
         log(f"❌ V3 buy error: {e}")
         return None
 
-
 def try_buy(fn, amount_wei, version):
     if ONE_TIME_BUY and bought.is_set():
         return False
     
-    log(f"🔥🔥🔥 BUY TRIGGERED ON {version}! Starting {MAX_BUY_ATTEMPTS} attempts...")
-    log(f"⚠️ HIGH TAX TOKEN: 25% buy tax - you will receive 75% of tokens!")
+    log(f"🔥🔥🔥🔥🔥 BUY TRIGGERED ON {version}! MAX ATTEMPTS: {MAX_BUY_ATTEMPTS}")
+    log(f"⚠️ HIGH TAX: 25% - you receive 75% of tokens")
     
     for attempt in range(1, MAX_BUY_ATTEMPTS + 1):
-        log(f"🛒 {version} buy attempt {attempt}/{MAX_BUY_ATTEMPTS} ...")
+        log(f"🛒🛒 {version} attempt {attempt}/{MAX_BUY_ATTEMPTS} ...")
         try:
             tx_hash = fn(amount_wei)
             if tx_hash:
                 add_buy(tx_hash, version)
                 bought.set()
-                log(f"🎉 {version} BUY COMPLETE! Transaction: {tx_hash}")
-                log(f"📉 25% tax deducted - check tokens in wallet!")
+                log(f"🎉🎉🎉🎉🎉 {version} BUY COMPLETE! Tx: {tx_hash}")
                 return True
-            log(f"⚠️ {version} attempt {attempt} returned no hash, retrying...")
+            log(f"⚠️ Attempt {attempt} no hash, retrying...")
         except Exception as e:
-            log(f"⚠️ Buy attempt {attempt} FAILED: {e}")
+            log(f"⚠️ Attempt {attempt} FAILED: {e}")
             set_error(e)
         
         if attempt < MAX_BUY_ATTEMPTS:
-            time.sleep(1)
+            time.sleep(0.5)
     
-    log(f"❌❌❌ {version} buy FAILED after {MAX_BUY_ATTEMPTS} attempts!")
+    log(f"❌❌❌ {version} FAILED after {MAX_BUY_ATTEMPTS} attempts!")
     return False
-
 
 # ==================== LOG PARSING ====================
 def _data_hex(entry):
@@ -282,15 +262,12 @@ def _data_hex(entry):
         return "0x" + bytes(data).hex()
     return data if data.startswith("0x") else "0x" + data
 
-
 def _word(data_hex, index):
     start = 2 + 64 * index
     return data_hex[start:start + 64]
 
-
 def _addr_from_word(word):
     return Web3.to_checksum_address("0x" + word[24:])
-
 
 # ==================== FACTORY WATCHERS ====================
 def _scan(factory_addr, sig, from_block, to_block):
@@ -303,7 +280,6 @@ def _scan(factory_addr, sig, from_block, to_block):
         if logs:
             return logs[0]
     return None
-
 
 def watch_v2_factory():
     log("🔎 V2 AUTO-MODE: Factory se naya LAPTOP pair dhoondh raha hoon...")
@@ -327,12 +303,11 @@ def watch_v2_factory():
                     return
             else:
                 last = cur
-            time.sleep(0.5)
+            time.sleep(0.3)
         except Exception as e:
             set_error(e)
             log(f"⚠️ V2 factory error: {e}")
             time.sleep(1)
-
 
 def watch_v3_factory():
     log("🔎 V3 AUTO-MODE: Factory se naya LAPTOP pool dhoondh raha hoon...")
@@ -362,18 +337,17 @@ def watch_v3_factory():
                     return
             else:
                 last = cur
-            time.sleep(0.5)
+            time.sleep(0.3)
         except Exception as e:
             set_error(e)
             log(f"⚠️ V3 factory error: {e}")
             time.sleep(1)
 
-
 # ==================== MONITORS ====================
 def monitor_v2(pair_address, buy_now=False):
     log(f"📍 V2 MONITOR START: {pair_address}")
-    log(f"⚡ EARLY BUY MODE: {LIQUIDITY_THRESHOLD_PERCENT}% increase = INSTANT BUY!")
-    log(f"⚠️ HIGH TAX: 25% buy tax - will receive 75% of tokens")
+    log(f"⚡ ULTRA MODE: {LIQUIDITY_THRESHOLD_PERCENT}% = BUY!")
+    log(f"⚠️ 25% tax - will receive 75%")
     
     try:
         pair = w3.eth.contract(address=Web3.to_checksum_address(pair_address), abi=V2_PAIR_ABI)
@@ -403,7 +377,7 @@ def monitor_v2(pair_address, buy_now=False):
                 
                 if reserve > threshold:
                     increase_pct = ((reserve - base_reserve) / base_reserve) * 100
-                    log(f"💧💧💧 V2 LIQUIDITY INCREASE DETECTED! +{increase_pct:.1f}%")
+                    log(f"💧💧💧 V2 LIQUIDITY INCREASE! +{increase_pct:.1f}%")
                     log(f"🚀🚀🚀 AUTO-BUY TRIGGERED ON V2!")
                     if try_buy(buy_v2, w3.to_wei(BUY_AMOUNT_ETH, "ether"), "V2") and ONE_TIME_BUY:
                         log("✅ V2 buy COMPLETE!")
@@ -422,12 +396,11 @@ def monitor_v2(pair_address, buy_now=False):
         set_error(e)
         log(f"❌ V2 monitor setup FAIL: {e}")
 
-
 def monitor_v3(pool_address, fee=None):
     fee = V3_POOL_FEE if fee is None else fee
     log(f"📍 V3 MONITOR START: {pool_address} (fee {fee})")
-    log(f"⚡ EARLY BUY MODE: {LIQUIDITY_THRESHOLD_PERCENT}% increase = INSTANT BUY!")
-    log(f"⚠️ HIGH TAX: 25% buy tax - will receive 75% of tokens")
+    log(f"⚡ ULTRA MODE: {LIQUIDITY_THRESHOLD_PERCENT}% = BUY!")
+    log(f"⚠️ 25% tax - will receive 75%")
     
     try:
         pool = w3.eth.contract(address=Web3.to_checksum_address(pool_address), abi=V3_POOL_ABI)
@@ -475,7 +448,6 @@ def monitor_v3(pool_address, fee=None):
         set_error(e)
         log(f"❌ V3 monitor setup FAIL: {e}")
 
-
 # ==================== FIND EXISTING ====================
 def find_existing_pools():
     found_v2, found_v3 = "", None
@@ -498,7 +470,6 @@ def find_existing_pools():
     except Exception as e:
         log(f"⚠️ V3 lookup fail: {e}")
     return found_v2, found_v3
-
 
 # ==================== MAIN ====================
 def main():
@@ -529,19 +500,17 @@ def main():
     
     required_eth = BUY_AMOUNT_ETH + 0.005
     if balance < w3.to_wei(required_eth, "ether"):
-        log(f"⚠️ ETH kam hai! Kam se kam {required_eth:.4f} ETH chahiye (buy + gas)")
+        log(f"⚠️ ETH kam hai! Kam se kam {required_eth:.4f} ETH chahiye")
     else:
-        log(f"✅ ETH sufficient for buy + gas!")
+        log(f"✅ ETH sufficient!")
 
     v2_router = w3.eth.contract(address=V2_ROUTER, abi=V2_ROUTER_ABI)
     v3_router = w3.eth.contract(address=V3_ROUTER, abi=V3_ROUTER_ABI)
 
     existing_v2, existing_v3 = find_existing_pools()
 
-    # ==================== CREATE THREADS ====================
     threads = []
     
-    # V2 thread
     if V2_PAIR:
         try:
             status["found_v2_pair"] = Web3.to_checksum_address(V2_PAIR)
@@ -560,7 +529,6 @@ def main():
         t = threading.Thread(target=watch_v2_factory, daemon=True)
         threads.append(t)
     
-    # V3 thread
     if V3_POOL:
         try:
             status["found_v3_pool"] = Web3.to_checksum_address(V3_POOL)
@@ -584,7 +552,6 @@ def main():
         set_error("Nothing to watch")
         return
 
-    # ==================== START ALL THREADS ====================
     status["mode"] = "auto (factory)" if not (V2_PAIR or V3_POOL) else "manual"
     
     log(f"🚀 Starting {len(threads)} threads...")
@@ -596,18 +563,19 @@ def main():
     status["running"] = True
     status["error"] = None
     save_status()
-    log(f"🚀🚀🚀 BOT LIVE — HIGH TAX MODE (25%) — {len(threads)} threads monitoring")
-    log(f"⚡ Buy trigger: {LIQUIDITY_THRESHOLD_PERCENT}% liquidity increase")
-    log(f"⏱ Check frequency: Every {POLL_SECONDS} seconds")
+    log(f"🚀🚀🚀🚀🚀 BOT LIVE — ULTRA BUY MODE — 100% GUARANTEED BUY")
+    log(f"⚡ Buy trigger: {LIQUIDITY_THRESHOLD_PERCENT}% (ULTRA LOW)")
+    log(f"⏱ Check frequency: Every {POLL_SECONDS} second (FASTEST)")
     log(f"💰 Buy amount: {BUY_AMOUNT_ETH} ETH")
-    log(f"⚠️ TAX: 25% buy tax - will receive 75% of tokens")
-    log(f"📉 Slippage: {SLIPPAGE_PERCENT}% (set for high tax)")
+    log(f"⚠️ TAX: 25% - you get 75%")
+    log(f"📉 Slippage: {SLIPPAGE_PERCENT}% (MAX)")
+    log(f"⛽ Gas: {MAX_FEE_GWEI} gwei (HIGH)")
+    log(f"🔄 Buy attempts: {MAX_BUY_ATTEMPTS} (MAX)")
 
-    # ==================== MAIN LOOP ====================
     try:
         while any(t.is_alive() for t in threads):
             if ONE_TIME_BUY and bought.is_set():
-                log("🎉🎉🎉 BUY COMPLETE! Bot stopping.")
+                log("🎉🎉🎉🎉🎉 BUY COMPLETE! Bot stopping.")
                 break
             time.sleep(3)
     except KeyboardInterrupt:
@@ -616,7 +584,6 @@ def main():
     status["running"] = False
     save_status()
     log("🏁 Bot stopped.")
-
 
 if __name__ == "__main__":
     main()
