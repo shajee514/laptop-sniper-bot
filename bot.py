@@ -32,18 +32,18 @@ V2_PAIR = os.getenv("V2_PAIR_ADDRESS", "").strip()
 V3_POOL = os.getenv("V3_POOL_ADDRESS", "").strip()
 AUTO_V2 = os.getenv("AUTO_DETECT_V2", "true").lower() == "true"
 AUTO_V3 = os.getenv("AUTO_DETECT_V3", "true").lower() == "true"
-V3_POOL_FEE = int(os.getenv("V3_POOL_FEE", "500"))  # Changed to 500 (your existing pool fee)
+V3_POOL_FEE = int(os.getenv("V3_POOL_FEE", "500"))
 
 
-# ==================== BUY SETTINGS (EARLY BUY OPTIMIZED) ====================
-BUY_AMOUNT_ETH    = float(os.getenv("BUY_AMOUNT_ETH", "0.001"))
-SLIPPAGE_PERCENT  = float(os.getenv("SLIPPAGE_PERCENT", "25"))  # Higher slippage for early buys
-MAX_FEE_GWEI      = float(os.getenv("MAX_FEE_GWEI", "150"))     # Higher gas for fast tx
-MAX_PRIORITY_GWEI = float(os.getenv("MAX_PRIORITY_GWEI", "15")) # Higher priority
-LIQUIDITY_THRESHOLD_PERCENT = float(os.getenv("LIQUIDITY_THRESHOLD", "5"))  # 5% increase = BUY!
-POLL_SECONDS      = 2  # Check every 2 seconds (faster detection)
+# ==================== BUY SETTINGS (HIGH TAX OPTIMIZED) ====================
+BUY_AMOUNT_ETH    = float(os.getenv("BUY_AMOUNT_ETH", "0.002"))
+SLIPPAGE_PERCENT  = float(os.getenv("SLIPPAGE_PERCENT", "35"))  # 35% for 25% tax
+MAX_FEE_GWEI      = float(os.getenv("MAX_FEE_GWEI", "200"))     # Higher gas
+MAX_PRIORITY_GWEI = float(os.getenv("MAX_PRIORITY_GWEI", "20"))
+LIQUIDITY_THRESHOLD_PERCENT = float(os.getenv("LIQUIDITY_THRESHOLD", "5"))
+POLL_SECONDS      = 2
 ONE_TIME_BUY      = os.getenv("ONE_TIME_BUY", "true").lower() == "true"
-MAX_BUY_ATTEMPTS  = 5  # More attempts for success
+MAX_BUY_ATTEMPTS  = 5
 
 
 STATUS_FILE = os.getenv("STATUS_FILE", "bot_status.json")
@@ -198,29 +198,52 @@ def _send(tx, version):
     return None
 
 
-# ==================== BUY FUNCTIONS ====================
+# ==================== BUY FUNCTIONS (TAX OPTIMIZED) ====================
 def buy_v2(amount_in_wei):
     path = [WETH, TOKEN]
-    amounts = v2_router.functions.getAmountsOut(amount_in_wei, path).call()
-    expected_out = amounts[-1]
-    amount_out_min = int(expected_out * (100 - SLIPPAGE_PERCENT) / 100)
-    log(f"💰 V2 quote: {expected_out / 10**18:.2f} LAPTOP tokens")
-    log(f"🎯 Min output: {amount_out_min / 10**18:.2f} (slippage {SLIPPAGE_PERCENT}%)")
-    
-    tx = v2_router.functions.swapExactETHForTokensSupportingFeeOnTransferTokens(
-        amount_out_min, path, acct.address, int(time.time()) + 180
-    ).build_transaction({"from": acct.address, "value": amount_in_wei, "gas": 450000, **_gas_fields()})
-    return _send(tx, "V2")
+    try:
+        amounts = v2_router.functions.getAmountsOut(amount_in_wei, path).call()
+        expected_out = amounts[-1]
+        
+        # 35% slippage for 25% tax + buffer
+        amount_out_min = int(expected_out * (100 - SLIPPAGE_PERCENT) / 100)
+        
+        log(f"💰 V2 quote: {expected_out / 10**18:.2f} LAPTOP (before 25% tax)")
+        log(f"🎯 Min output: {amount_out_min / 10**18:.2f} (slippage {SLIPPAGE_PERCENT}%)")
+        log(f"📉 After 25% tax: ~{expected_out * 0.75 / 10**18:.2f} tokens")
+        
+        tx = v2_router.functions.swapExactETHForTokensSupportingFeeOnTransferTokens(
+            amount_out_min, path, acct.address, int(time.time()) + 180
+        ).build_transaction({
+            "from": acct.address, 
+            "value": amount_in_wei, 
+            "gas": 500000,  # Higher gas for tax tokens
+            **_gas_fields()
+        })
+        return _send(tx, "V2")
+    except Exception as e:
+        log(f"❌ V2 buy error: {e}")
+        return None
 
 
 def buy_v3(amount_in_wei, fee=None):
     fee = V3_POOL_FEE if fee is None else fee
-    params = (WETH, TOKEN, int(fee), acct.address, amount_in_wei, 0, 0)
-    log(f"💰 V3 quote: buying with {fee} fee tier")
-    
-    tx = v3_router.functions.exactInputSingle(params).build_transaction(
-        {"from": acct.address, "value": amount_in_wei, "gas": 550000, **_gas_fields()})
-    return _send(tx, "V3")
+    try:
+        log(f"💰 V3 buy: {fee} fee tier, {BUY_AMOUNT_ETH} ETH")
+        log(f"⚠️ 25% tax applies - expect 75% of tokens")
+        
+        params = (WETH, TOKEN, int(fee), acct.address, amount_in_wei, 0, 0)
+        
+        tx = v3_router.functions.exactInputSingle(params).build_transaction({
+            "from": acct.address, 
+            "value": amount_in_wei, 
+            "gas": 600000,  # Higher gas
+            **_gas_fields()
+        })
+        return _send(tx, "V3")
+    except Exception as e:
+        log(f"❌ V3 buy error: {e}")
+        return None
 
 
 def try_buy(fn, amount_wei, version):
@@ -228,6 +251,7 @@ def try_buy(fn, amount_wei, version):
         return False
     
     log(f"🔥🔥🔥 BUY TRIGGERED ON {version}! Starting {MAX_BUY_ATTEMPTS} attempts...")
+    log(f"⚠️ HIGH TAX TOKEN: 25% buy tax - you will receive 75% of tokens!")
     
     for attempt in range(1, MAX_BUY_ATTEMPTS + 1):
         log(f"🛒 {version} buy attempt {attempt}/{MAX_BUY_ATTEMPTS} ...")
@@ -237,6 +261,7 @@ def try_buy(fn, amount_wei, version):
                 add_buy(tx_hash, version)
                 bought.set()
                 log(f"🎉 {version} BUY COMPLETE! Transaction: {tx_hash}")
+                log(f"📉 25% tax deducted - check tokens in wallet!")
                 return True
             log(f"⚠️ {version} attempt {attempt} returned no hash, retrying...")
         except Exception as e:
@@ -244,7 +269,7 @@ def try_buy(fn, amount_wei, version):
             set_error(e)
         
         if attempt < MAX_BUY_ATTEMPTS:
-            time.sleep(1)  # Quick retry
+            time.sleep(1)
     
     log(f"❌❌❌ {version} buy FAILED after {MAX_BUY_ATTEMPTS} attempts!")
     return False
@@ -344,10 +369,11 @@ def watch_v3_factory():
             time.sleep(1)
 
 
-# ==================== MONITORS (EARLY BUY OPTIMIZED) ====================
+# ==================== MONITORS ====================
 def monitor_v2(pair_address, buy_now=False):
     log(f"📍 V2 MONITOR START: {pair_address}")
     log(f"⚡ EARLY BUY MODE: {LIQUIDITY_THRESHOLD_PERCENT}% increase = INSTANT BUY!")
+    log(f"⚠️ HIGH TAX: 25% buy tax - will receive 75% of tokens")
     
     try:
         pair = w3.eth.contract(address=Web3.to_checksum_address(pair_address), abi=V2_PAIR_ABI)
@@ -401,6 +427,7 @@ def monitor_v3(pool_address, fee=None):
     fee = V3_POOL_FEE if fee is None else fee
     log(f"📍 V3 MONITOR START: {pool_address} (fee {fee})")
     log(f"⚡ EARLY BUY MODE: {LIQUIDITY_THRESHOLD_PERCENT}% increase = INSTANT BUY!")
+    log(f"⚠️ HIGH TAX: 25% buy tax - will receive 75% of tokens")
     
     try:
         pool = w3.eth.contract(address=Web3.to_checksum_address(pool_address), abi=V3_POOL_ABI)
@@ -569,10 +596,12 @@ def main():
     status["running"] = True
     status["error"] = None
     save_status()
-    log(f"🚀🚀🚀 BOT LIVE — EARLY BUY MODE ACTIVE — {len(threads)} threads monitoring")
+    log(f"🚀🚀🚀 BOT LIVE — HIGH TAX MODE (25%) — {len(threads)} threads monitoring")
     log(f"⚡ Buy trigger: {LIQUIDITY_THRESHOLD_PERCENT}% liquidity increase")
     log(f"⏱ Check frequency: Every {POLL_SECONDS} seconds")
     log(f"💰 Buy amount: {BUY_AMOUNT_ETH} ETH")
+    log(f"⚠️ TAX: 25% buy tax - will receive 75% of tokens")
+    log(f"📉 Slippage: {SLIPPAGE_PERCENT}% (set for high tax)")
 
     # ==================== MAIN LOOP ====================
     try:
