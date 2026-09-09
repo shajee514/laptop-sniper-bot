@@ -35,7 +35,7 @@ AUTO_V3 = os.getenv("AUTO_DETECT_V3", "true").lower() == "true"
 V3_POOL_FEE = int(os.getenv("V3_POOL_FEE", "3000"))
 
 
-BUY_AMOUNT_ETH    = float(os.getenv("BUY_AMOUNT_ETH", "0.005"))
+BUY_AMOUNT_ETH    = float(os.getenv("BUY_AMOUNT_ETH", "0.001"))
 SLIPPAGE_PERCENT  = float(os.getenv("SLIPPAGE_PERCENT", "20"))
 MAX_FEE_GWEI      = float(os.getenv("MAX_FEE_GWEI", "100"))
 MAX_PRIORITY_GWEI = float(os.getenv("MAX_PRIORITY_GWEI", "10"))
@@ -276,8 +276,8 @@ def watch_v2_factory():
                 entry = _scan(V2_FACTORY, PAIR_SIG, last + 1, cur)
                 last = cur
                 check_count += 1
-                if check_count % 12 == 0:  # Har 60 seconds mein status
-                    log(f"⏳ V2 factory check #{check_count} (block {cur}) - abhi tak koi pair nahi bana")
+                if check_count % 12 == 0:
+                    log(f"⏳ V2 factory check #{check_count} (block {cur}) - no pair yet")
                 if entry:
                     pair = _addr_from_word(_word(_data_hex(entry), 0))
                     log(f"🆕 NAYA V2 PAIR BANA: {pair}")
@@ -306,7 +306,7 @@ def watch_v3_factory():
                 last = cur
                 check_count += 1
                 if check_count % 12 == 0:
-                    log(f"⏳ V3 factory check #{check_count} (block {cur}) - abhi tak koi pool nahi bana")
+                    log(f"⏳ V3 factory check #{check_count} (block {cur}) - no pool yet")
                 if entry:
                     data = _data_hex(entry)
                     pool = _addr_from_word(_word(data, 1))
@@ -332,86 +332,94 @@ def watch_v3_factory():
 # ==================== MONITORS ====================
 def monitor_v2(pair_address, buy_now=False):
     log(f"📍 V2 MONITOR START: {pair_address}")
-    pair = w3.eth.contract(address=Web3.to_checksum_address(pair_address), abi=V2_PAIR_ABI)
-    token0 = pair.functions.token0().call()
-    is_token0 = token0.lower() == TOKEN.lower()
-    log(f"V2 pair: {pair_address} | LAPTOP token0 hai: {is_token0}")
+    try:
+        pair = w3.eth.contract(address=Web3.to_checksum_address(pair_address), abi=V2_PAIR_ABI)
+        token0 = pair.functions.token0().call()
+        is_token0 = token0.lower() == TOKEN.lower()
+        log(f"V2 pair: {pair_address} | LAPTOP token0: {is_token0}")
 
-    r0, r1, _ = pair.functions.getReserves().call()
-    base_reserve = r0 if is_token0 else r1
-    log(f"👀 V2 initial reserve: {base_reserve / 10**18:.4f} LAPTOP")
+        r0, r1, _ = pair.functions.getReserves().call()
+        base_reserve = r0 if is_token0 else r1
+        log(f"👀 V2 initial reserve: {base_reserve / 10**18:.4f} LAPTOP")
 
-    if buy_now and base_reserve > 10**15:
-        log("💧 V2 liquidity mojood — FORAN BUY!")
-        if try_buy(buy_v2, w3.to_wei(BUY_AMOUNT_ETH, "ether"), "V2") and ONE_TIME_BUY:
-            return
-    base_reserve = max(base_reserve, 1)
+        if buy_now and base_reserve > 10**15:
+            log("💧 V2 liquidity mojood — FORAN BUY!")
+            if try_buy(buy_v2, w3.to_wei(BUY_AMOUNT_ETH, "ether"), "V2") and ONE_TIME_BUY:
+                return
+        base_reserve = max(base_reserve, 1)
 
-    check_count = 0
-    while not (ONE_TIME_BUY and bought.is_set()):
-        try:
-            r0, r1, _ = pair.functions.getReserves().call()
-            reserve = r0 if is_token0 else r1
-            check_count += 1
-            
-            log(f"✅ V2 check #{check_count}: reserve = {reserve / 10**18:.4f} LAPTOP")
-            
-            if reserve > base_reserve * 1.2:
-                log(f"💧 V2 LIQUIDITY INCREASE! {base_reserve / 10**18:.4f} → {reserve / 10**18:.4f} 🚀 AUTO-BUY!")
-                if try_buy(buy_v2, w3.to_wei(BUY_AMOUNT_ETH, "ether"), "V2") and ONE_TIME_BUY:
-                    log("✅ V2 buy successful!")
-                    return
-                base_reserve = reserve
-            else:
-                threshold = base_reserve * 1.2
-                log(f"ℹ️ V2 waiting: current {reserve / 10**18:.4f}, need {threshold / 10**18:.4f}")
-            
-            time.sleep(POLL_SECONDS)
-        except Exception as e:
-            set_error(e)
-            log(f"⚠️ V2 monitor error: {e}")
-            time.sleep(2)
+        check_count = 0
+        while not (ONE_TIME_BUY and bought.is_set()):
+            try:
+                r0, r1, _ = pair.functions.getReserves().call()
+                reserve = r0 if is_token0 else r1
+                check_count += 1
+                
+                log(f"✅ V2 check #{check_count}: reserve = {reserve / 10**18:.4f} LAPTOP")
+                
+                if reserve > base_reserve * 1.2:
+                    log(f"💧 V2 LIQUIDITY INCREASE! {base_reserve / 10**18:.4f} → {reserve / 10**18:.4f} 🚀 AUTO-BUY!")
+                    if try_buy(buy_v2, w3.to_wei(BUY_AMOUNT_ETH, "ether"), "V2") and ONE_TIME_BUY:
+                        log("✅ V2 buy successful!")
+                        return
+                    base_reserve = reserve
+                else:
+                    threshold = base_reserve * 1.2
+                    log(f"ℹ️ V2 waiting: current {reserve / 10**18:.4f}, need {threshold / 10**18:.4f}")
+                
+                time.sleep(POLL_SECONDS)
+            except Exception as e:
+                set_error(e)
+                log(f"⚠️ V2 monitor error: {e}")
+                time.sleep(2)
+    except Exception as e:
+        set_error(e)
+        log(f"❌ V2 monitor setup fail: {e}")
 
 
 def monitor_v3(pool_address, fee=None):
     fee = V3_POOL_FEE if fee is None else fee
     log(f"📍 V3 MONITOR START: {pool_address} (fee {fee})")
-    pool = w3.eth.contract(address=Web3.to_checksum_address(pool_address), abi=V3_POOL_ABI)
-    base_liq = pool.functions.liquidity().call()
-    log(f"👀 V3 initial liquidity: {base_liq}")
+    try:
+        pool = w3.eth.contract(address=Web3.to_checksum_address(pool_address), abi=V3_POOL_ABI)
+        base_liq = pool.functions.liquidity().call()
+        log(f"👀 V3 initial liquidity: {base_liq}")
 
-    def _buy():
-        return try_buy(lambda amt: buy_v3(amt, fee), w3.to_wei(BUY_AMOUNT_ETH, "ether"), "V3")
+        def _buy():
+            return try_buy(lambda amt: buy_v3(amt, fee), w3.to_wei(BUY_AMOUNT_ETH, "ether"), "V3")
 
-    check_count = 0
-    while not (ONE_TIME_BUY and bought.is_set()):
-        try:
-            liq = pool.functions.liquidity().call()
-            check_count += 1
-            
-            log(f"✅ V3 check #{check_count}: liquidity = {liq}")
-            
-            if base_liq == 0 and liq > 0:
-                log(f"💧 V3 LIQUIDITY ADD! 0 → {liq} 🚀 AUTO-BUY!")
-                if _buy() and ONE_TIME_BUY:
-                    log("✅ V3 buy successful!")
-                    return
-                base_liq = liq
-            elif base_liq > 0 and liq > base_liq * 1.2:
-                log(f"💧 V3 LIQUIDITY INCREASE! {base_liq} → {liq} 🚀 AUTO-BUY!")
-                if _buy() and ONE_TIME_BUY:
-                    log("✅ V3 buy successful!")
-                    return
-                base_liq = liq
-            else:
-                threshold = base_liq * 1.2
-                log(f"ℹ️ V3 waiting: current {liq}, need {threshold}")
-            
-            time.sleep(POLL_SECONDS)
-        except Exception as e:
-            set_error(e)
-            log(f"⚠️ V3 monitor error: {e}")
-            time.sleep(2)
+        check_count = 0
+        while not (ONE_TIME_BUY and bought.is_set()):
+            try:
+                liq = pool.functions.liquidity().call()
+                check_count += 1
+                
+                log(f"✅ V3 check #{check_count}: liquidity = {liq}")
+                
+                if base_liq == 0 and liq > 0:
+                    log(f"💧 V3 LIQUIDITY ADD! 0 → {liq} 🚀 AUTO-BUY!")
+                    if _buy() and ONE_TIME_BUY:
+                        log("✅ V3 buy successful!")
+                        return
+                    base_liq = liq
+                elif base_liq > 0 and liq > base_liq * 1.2:
+                    log(f"💧 V3 LIQUIDITY INCREASE! {base_liq} → {liq} 🚀 AUTO-BUY!")
+                    if _buy() and ONE_TIME_BUY:
+                        log("✅ V3 buy successful!")
+                        return
+                    base_liq = liq
+                else:
+                    threshold = base_liq * 1.2
+                    log(f"ℹ️ V3 waiting: current {liq}, need {threshold}")
+                
+                time.sleep(POLL_SECONDS)
+            except Exception as e:
+                set_error(e)
+                log(f"⚠️ V3 monitor error: {e}")
+                time.sleep(2)
+    except Exception as e:
+        set_error(e)
+        log(f"❌ V3 monitor setup fail: {e}")
 
 
 # ==================== FIND EXISTING ====================
@@ -443,7 +451,7 @@ def main():
     global w3, acct, v2_router, v3_router
 
     if not (PRIVATE_KEY.startswith("0x") and len(PRIVATE_KEY) == 66):
-        log("❌ PRIV_KEY sahi nahi. Railway Variables mein 0x... wali private key dalein.")
+        log("❌ PRIV_KEY sahi nahi.")
         return
 
     w3 = Web3(Web3.HTTPProvider(RPC_URL, request_kwargs={"timeout": 15}))
@@ -465,61 +473,74 @@ def main():
     log(f"Wallet: {acct.address}")
     log(f"ETH balance: {status['eth_balance']:.5f} ETH")
     if balance < w3.to_wei(BUY_AMOUNT_ETH + 0.002, "ether"):
-        log("⚠️ ETH kam hai (buy + gas ke liye ~0.01 ETH chahiye).")
+        log("⚠️ ETH kam hai (buy + gas ke liye ~0.003 ETH chahiye).")
 
     v2_router = w3.eth.contract(address=V2_ROUTER, abi=V2_ROUTER_ABI)
     v3_router = w3.eth.contract(address=V3_ROUTER, abi=V3_ROUTER_ABI)
 
     existing_v2, existing_v3 = find_existing_pools()
 
-    # ==================== PARALLEL THREADS ====================
+    # ==================== CREATE THREADS ====================
     threads = []
     
-    # V2
+    # V2 thread
     if V2_PAIR:
         try:
             status["found_v2_pair"] = Web3.to_checksum_address(V2_PAIR)
             log(f"📌 V2 manual pair: {status['found_v2_pair']}")
-            threads.append(threading.Thread(target=monitor_v2, args=(status["found_v2_pair"],), daemon=True))
+            t = threading.Thread(target=monitor_v2, args=(status["found_v2_pair"],), daemon=True)
+            threads.append(t)
         except Exception as e:
             log(f"❌ V2_PAIR ghalat: {e}")
     elif AUTO_V2 and existing_v2:
         status["found_v2_pair"] = existing_v2
         log(f"📌 V2 existing pair: {existing_v2}")
-        threads.append(threading.Thread(target=monitor_v2, args=(existing_v2,), kwargs={"buy_now": True}, daemon=True))
+        t = threading.Thread(target=monitor_v2, args=(existing_v2,), kwargs={"buy_now": True}, daemon=True)
+        threads.append(t)
     elif AUTO_V2:
-        threads.append(threading.Thread(target=watch_v2_factory, daemon=True))
+        log("🔎 V2 AUTO-MODE: Factory se pair dhoondh raha hoon...")
+        t = threading.Thread(target=watch_v2_factory, daemon=True)
+        threads.append(t)
     
-    # V3
+    # V3 thread
     if V3_POOL:
         try:
             status["found_v3_pool"] = Web3.to_checksum_address(V3_POOL)
             log(f"📌 V3 manual pool: {status['found_v3_pool']}")
-            threads.append(threading.Thread(target=monitor_v3, args=(status["found_v3_pool"],), daemon=True))
+            t = threading.Thread(target=monitor_v3, args=(status["found_v3_pool"],), daemon=True)
+            threads.append(t)
         except Exception as e:
             log(f"❌ V3_POOL ghalat: {e}")
     elif AUTO_V3 and existing_v3:
         status["found_v3_pool"] = existing_v3[0]
         log(f"📌 V3 existing pool: {existing_v3[0]} (fee {existing_v3[1]})")
-        threads.append(threading.Thread(target=monitor_v3, args=(existing_v3[0],), kwargs={"fee": existing_v3[1]}, daemon=True))
+        t = threading.Thread(target=monitor_v3, args=(existing_v3[0],), kwargs={"fee": existing_v3[1]}, daemon=True)
+        threads.append(t)
     elif AUTO_V3:
-        threads.append(threading.Thread(target=watch_v3_factory, daemon=True))
+        log("🔎 V3 AUTO-MODE: Factory se pool dhoondh raha hoon...")
+        t = threading.Thread(target=watch_v3_factory, daemon=True)
+        threads.append(t)
     
     if not threads:
         log("❌ Kuch bhi monitor nahi ho raha!")
         set_error("Nothing to watch")
         return
 
+    # ==================== START ALL THREADS ====================
     status["mode"] = "auto (factory)" if not (V2_PAIR or V3_POOL) else "manual"
-    for t in threads:
+    
+    log(f"🚀 Starting {len(threads)} threads...")
+    for i, t in enumerate(threads, 1):
         t.start()
-        log(f"✅ Thread start: {t.name}")
+        time.sleep(0.1)  # Small delay between thread starts
+        log(f"✅ Thread {i} started: {t.name}")
 
     status["running"] = True
     status["error"] = None
     save_status()
-    log(f"🚀 BOT LIVE — {len(threads)} threads active — V2 + V3 parallel monitoring")
+    log(f"🚀 BOT LIVE — mode: {status['mode']} — {len(threads)} threads active")
 
+    # ==================== MAIN LOOP ====================
     try:
         while any(t.is_alive() for t in threads):
             if ONE_TIME_BUY and bought.is_set():
